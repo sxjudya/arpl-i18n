@@ -1,0 +1,85 @@
+#
+# Copyright (C) 2022 Ing <https://github.com/wjz304>
+#
+# This is free software, licensed under the MIT License.
+# See /LICENSE for more information.
+#
+
+name: Buildroot
+
+on:
+  workflow_dispatch:
+    inputs:
+      push:
+        description: "push"
+        default: false
+        type: boolean
+jobs:
+  buildroot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@main
+        with:
+          lfs: 'true'
+          
+      - name: Initialization environment
+        run: |
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+          sudo timedatectl set-timezone "Asia/Shanghai"
+
+          # Clean up disk space
+          docker rmi $(docker images -q)
+          sudo apt update
+          sudo apt -y purge azure-cli* docker* llvm* google* dotnet* powershell* sphinxsearch* mysql* php* 
+          sudo apt -y full-upgrade
+
+          sudo apt update
+          sudo apt install -y jq gawk cpio gettext libelf-dev qemu-utils 
+          sudo snap install yq
+          
+          df -h
+          
+      - name: Build buildroot
+        run: |
+          BR_VERSION="2023.02.x"
+          POJETCNAME="rr"
+          BASEPATH=buildroot
+          WORKPATH=.buildroot
+          CLEAN=0
+
+          if [ -n "${{ secrets.ACTION }}" ]; then
+            echo "used rp-buildroot"
+            git clone https://oauth2:${{ secrets.ACTION }}@github.com/wjz304/rp-buildroot.git
+            BASEPATH=rp-buildroot/rr
+          fi
+
+          . scripts/buildroot.sh "${BR_VERSION}" "${POJETCNAME}" "${BASEPATH}" "${WORKPATH}" ${CLEAN}
+          [ $? -ne 0 ] && return 1
+          
+          if [ -f ".buildroot/output/images/bzImage" -a -f .buildroot/output/images/rootfs.cpio.xz ]; then
+            cp .buildroot/output/images/bzImage file/p3/bzImage-rr
+            cp .buildroot/output/images/rootfs.cpio.xz file/p3/initrd-rr
+          else
+            return 1
+          fi
+
+      - name: Upload artifact
+        if: success()
+        uses: actions/upload-artifact@v3
+        with:
+          name: grub
+          path: |
+            file/p3/*-rr
+
+      - name: Check and Push
+        if: success() && inputs.push == true
+        run: |
+          git pull
+          status=$(git status -s | grep -E 'files/p3/' | awk '{printf " %s", $2}')
+          if [ -n "${status}" ]; then
+            git add ${status}
+            git commit -m "update $(date +%Y-%m-%d" "%H:%M:%S)"
+            git push -f
+          fi

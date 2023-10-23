@@ -75,11 +75,11 @@ function getLKMs() {
   local CACHE_FILE="/tmp/rp-lkms.zip"
   rm -f "${CACHE_FILE}"
   if [ "${2}" = "true" ]; then
-    TAG=$(curl -s "https://api.github.com/repos/wjz304/redpill-lkm/releases" | jq -r ".[0].tag_name")
+    TAG=$(curl -s "https://api.github.com/repos/wjz304/rr-lkms/releases" | jq -r ".[0].tag_name")
   else
-    TAG=$(curl -s "https://api.github.com/repos/wjz304/redpill-lkm/releases/latest" | jq -r ".tag_name")
+    TAG=$(curl -s "https://api.github.com/repos/wjz304/rr-lkms/releases/latest" | jq -r ".tag_name")
   fi
-  STATUS=$(curl -w "%{http_code}" -L "https://github.com/wjz304/redpill-lkm/releases/download/${TAG}/rp-lkms.zip" -o "${CACHE_FILE}")
+  STATUS=$(curl -w "%{http_code}" -L "https://github.com/wjz304/rr-lkms/releases/download/${TAG}/rp-lkms.zip" -o "${CACHE_FILE}")
   echo "TAG=${TAG}; Status=${STATUS}"
   [ ${STATUS} -ne 200 ] && exit 1
   # Unzip LKMs
@@ -99,11 +99,11 @@ function getAddons() {
   local CACHE_DIR="/tmp/addons"
   local CACHE_FILE="/tmp/addons.zip"
   if [ "${2}" = "true" ]; then
-    TAG=$(curl -s "https://api.github.com/repos/wjz304/arpl-addons/releases" | jq -r ".[0].tag_name")
+    TAG=$(curl -s "https://api.github.com/repos/wjz304/rr-addons/releases" | jq -r ".[0].tag_name")
   else
-    TAG=$(curl -s "https://api.github.com/repos/wjz304/arpl-addons/releases/latest" | jq -r ".tag_name")
+    TAG=$(curl -s "https://api.github.com/repos/wjz304/rr-addons/releases/latest" | jq -r ".tag_name")
   fi
-  STATUS=$(curl -w "%{http_code}" -L "https://github.com/wjz304/arpl-addons/releases/download/${TAG}/addons.zip" -o "${CACHE_FILE}")
+  STATUS=$(curl -w "%{http_code}" -L "https://github.com/wjz304/rr-addons/releases/download/${TAG}/addons.zip" -o "${CACHE_FILE}")
   echo "TAG=${TAG}; Status=${STATUS}"
   [ ${STATUS} -ne 200 ] && exit 1
   rm -rf "${DEST_PATH}"
@@ -132,11 +132,11 @@ function getModules() {
   local CACHE_FILE="/tmp/modules.zip"
   rm -f "${CACHE_FILE}"
   if [ "${2}" = "true" ]; then
-    TAG=$(curl -s "https://api.github.com/repos/wjz304/arpl-modules/releases" | jq -r ".[0].tag_name")
+    TAG=$(curl -s "https://api.github.com/repos/wjz304/rr-modules/releases" | jq -r ".[0].tag_name")
   else
-    TAG=$(curl -s "https://api.github.com/repos/wjz304/arpl-modules/releases/latest" | jq -r ".tag_name")
+    TAG=$(curl -s "https://api.github.com/repos/wjz304/rr-modules/releases/latest" | jq -r ".tag_name")
   fi
-  STATUS=$(curl -w "%{http_code}" -L "https://github.com/wjz304/arpl-modules/releases/download/${TAG}/modules.zip" -o "${CACHE_FILE}")
+  STATUS=$(curl -w "%{http_code}" -L "https://github.com/wjz304/rr-modules/releases/download/${TAG}/modules.zip" -o "${CACHE_FILE}")
   echo "TAG=${TAG}; Status=${STATUS}"
   [ ${STATUS} -ne 200 ] && exit 1
   # Unzip Modules
@@ -145,4 +145,36 @@ function getModules() {
   unzip "${CACHE_FILE}" -d "${DEST_PATH}"
   rm -f "${CACHE_FILE}"
   echo "Getting Modules end"
+}
+
+
+# repack initrd
+# $1 initrd file  
+# $2 plugin path
+# $3 output path
+function repackInitrd() {
+  INITRD_FILE="${1}"
+  PLUGIN_PATH="${2}"
+  OUTPUT_PATH="${3:-${INITRD_FILE}}"
+
+  [ -z "${INITRD_FILE}" -o ! -f "${INITRD_FILE}" ] && exit 1
+  [ -z "${PLUGIN_PATH}" -o ! -d "${PLUGIN_PATH}" ] && exit 1
+  
+  INITRD_FILE="$(readlink -f "${INITRD_FILE}")"
+  PLUGIN_PATH="$(readlink -f "${PLUGIN_PATH}")"
+  OUTPUT_PATH="$(readlink -f "${OUTPUT_PATH}")"
+
+  RDXZ_PATH="rdxz_tmp"
+  mkdir -p "${RDXZ_PATH}"
+  (
+    cd "${RDXZ_PATH}"
+    sudo xz -dc <"${INITRD_FILE}" | sudo cpio -idm
+  ) || true
+  sudo cp -Rf "${PLUGIN_PATH}/"* "${RDXZ_PATH}/"
+  [ -f "${OUTPUT_PATH}" ] && rm -rf "${OUTPUT_PATH}"
+  (
+    cd "${RDXZ_PATH}"
+    sudo find . 2>/dev/null | sudo cpio -o -H newc -R root:root | xz --check=crc32 >"${OUTPUT_PATH}"
+  ) || true
+  sudo rm -rf "${RDXZ_PATH}"
 }

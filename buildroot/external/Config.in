@@ -1,0 +1,3 @@
+source "$BR2_EXTERNAL_RR_PATH/libsixel/Config.in"
+source "$BR2_EXTERNAL_RR_PATH/r8125/Config.in"
+source "$BR2_EXTERNAL_RR_PATH/r8169/Config.in"

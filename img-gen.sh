@@ -4,35 +4,56 @@ set -e
 
 . scripts/func.sh
 
-if [ ! -d .buildroot ]; then
-  echo "Downloading buildroot"
-  git clone --single-branch -b 2023.02.x https://github.com/buildroot/buildroot.git .buildroot
+if [ ! -f files/p3/bzImage-rr -a ! -f files/p3/initrd-rr ]; then
+  BR_VERSION="2023.02.x"
+  POJETCNAME="rr"
+  BASEPATH=buildroot
+  WORKPATH=.buildroot
+  CLEAN=0
+  . scripts/buildroot.sh "${BR_VERSION}" "${POJETCNAME}" "${BASEPATH}" "${WORKPATH}" ${CLEAN}
+  [ $? -ne 0 ] && exit 1
+  if [ -f ".buildroot/output/images/bzImage" -a -f .buildroot/output/images/rootfs.cpio.xz ]; then
+    cp .buildroot/output/images/bzImage file/p3/bzImage-rr
+    cp .buildroot/output/images/rootfs.cpio.xz file/p3/initrd-rr
+  else
+    exit 1
+  fi
 fi
 
 # Convert po2mo, Get extractor, LKM, addons and Modules
-convertpo2mo "files/board/arpl/overlayfs/opt/arpl/lang"
-getExtractor "files/board/arpl/p3/extractor"
-getLKMs "files/board/arpl/p3/lkms" true
-getAddons "files/board/arpl/p3/addons" true
-getModules "files/board/arpl/p3/modules" true
+convertpo2mo "files/initrd/opt/rr/lang"
+getExtractor "files/p3/extractor"
+getLKMs "files/p3/lkms" true
+getAddons "files/p3/addons" true
+getModules "files/p3/modules" true
 
-# Remove old files
-rm -rf ".buildroot/output/target/opt/arpl"
-rm -rf ".buildroot/board/arpl/overlayfs"
-rm -rf ".buildroot/board/arpl/p1"
-rm -rf ".buildroot/board/arpl/p3"
 
-# Copy files
+IMAGE_FILE="rr.img"
+gzip -dc "files/grub.img.gz" >"${IMAGE_FILE}"
+fdisk -l "${IMAGE_FILE}"
+
+LOOPX=$(sudo losetup -f)
+sudo losetup -P "${LOOPX}" "${IMAGE_FILE}"
+
+echo "Mounting image file"
+mkdir -p "/tmp/p1"
+mkdir -p "/tmp/p3"
+sudo mount ${LOOPX}p1 "/tmp/p1"
+sudo mount ${LOOPX}p3 "/tmp/p3"
+
+echo "Remake initrd"
+repackInitrd "files/p3/initrd-rr" "files/initrd"
+
 echo "Copying files"
-VERSION=$(cat VERSION)
-sed 's/^ARPL_VERSION=.*/ARPL_VERSION="'${VERSION}'"/' -i files/board/arpl/overlayfs/opt/arpl/include/consts.sh
-echo "${VERSION}" >files/board/arpl/p1/ARPL-VERSION
-cp -Ru files/* .buildroot/
+sudo cp -Rf "files/p1/"* "/tmp/p1"
+sudo cp -Rf "files/p3/"* "/tmp/p3"
+sync
 
-cd .buildroot
-echo "Generating default config"
-make BR2_EXTERNAL=./external -j$(nproc) arpl_defconfig
-echo "Version: ${VERSION}"
-echo "Building... Drink a coffee and wait!"
-make BR2_EXTERNAL=./external -j$(nproc)
-cd -
+echo "Unmount image file"
+sudo umount "/tmp/p1"
+sudo umount "/tmp/p3"
+rmdir "/tmp/p1"
+rmdir "/tmp/p3"
+
+sudo losetup --detach ${LOOPX}
+
